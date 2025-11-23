@@ -420,7 +420,11 @@ private async Task EvaluateStrategyAsync(long symbolId, string mainTf)
 
 ---
 
-## V1 Backtest vs Live Execution
+## V1 Execution Modes: Live vs Replay vs Backtest
+
+Alphiq v1 has three execution modes: **Live trading**, **Replay** (primary backtesting), and **Backtest** (legacy). **Replay is the preferred approach** for strategy validation and optimization.
+
+---
 
 ### Live Trading Flow
 
@@ -438,7 +442,7 @@ SignalR BarClosed Event
   → Filter by MainTimeframe
   → Update Cache (per-symbol lock)
   → Fetch Multi-TF Snapshot
-  → Evaluate Strategy
+  → Evaluate Strategy (via production StrategyEngineService)
   → Calculate SL (IStopLossStrategy)
   → Calculate TP (ITakeProfitStrategy)
   → Calculate Volume (IPositionSizingStrategy)
@@ -448,7 +452,325 @@ SignalR BarClosed Event
   → Persist Trade to Supabase
 ```
 
-### Backtest Flow
+---
+
+### Replay Flow (Primary Backtesting Approach)
+
+**Why Replay is Better:**
+
+Replay is the **preferred backtesting method** because it achieves **zero code divergence** with live trading. Unlike the legacy Backtest engine which reimplements strategy logic, Replay **reuses the production StrategyEngineService directly**.
+
+**Key Advantages:**
+1. **Zero Code Divergence**: Uses the exact same StrategyEngineService code path as live trading
+2. **Production Fidelity**: Any bug fixes or improvements to strategies automatically apply to backtests
+3. **Optimizer-Friendly**: Designed for high-throughput parameter sweeps (used by GeneticSearch)
+4. **Smart Caching**: CandleCache with gzip compression enables fast re-runs during optimization
+
+**Architecture - Adapter Pattern:**
+
+Replay wraps the production StrategyEngineService but swaps out its dependencies via dependency injection:
+
+```
+┌─────────────────────────────────────────────────────────┐
+│  ReplayEngine (orchestrator)                            │
+│  - Manages simulation timeline                          │
+│  - Position tracking & P/L calculation                  │
+│  - Stop loss / Take profit execution                    │
+└───────────────┬─────────────────────────────────────────┘
+                │ owns
+                ▼
+┌─────────────────────────────────────────────────────────┐
+│  StrategyEngineService (PRODUCTION CODE)                │
+│  - Exact same code as live trading                      │
+│  - Strategy evaluation                                  │
+│  - Signal generation                                    │
+│  - Risk calculations                                    │
+└───────────────┬─────────────────────────────────────────┘
+                │ uses (via DI)
+                ▼
+        ┌───────────────┬───────────────┬──────────────┐
+        │               │               │              │
+        ▼               ▼               ▼              ▼
+  IMarketDataService  IOrderService  IStrategyConfig  (Others)
+        │               │               │
+  ┌─────▼─────┐  ┌─────▼─────┐  ┌─────▼──────┐
+  │ Replay    │  │ Backtest  │  │ InMemory   │
+  │ MarketData│  │ Order     │  │ StrategyCfg│
+  │ Service   │  │ Service   │  │ Provider   │
+  └───────────┘  └───────────┘  └────────────┘
+  (adapter)      (adapter)      (adapter)
+```
+
+**Key Adapter Classes:**
+
+1. **ReplayMarketDataService**
+   - Implements `IMarketDataService`
+   - Returns historical bars from CandleCache instead of live SignalR streams
+
+2. **BacktestOrderService**
+   - Implements `IOrderService`
+   - Returns `OrderRequest` objects instead of executing real trades
+   - Orders are queued for ReplayEngine to process with T+1 execution
+
+3. **InMemoryStrategyConfigProvider**
+   - Implements `IStrategyConfigProvider`
+   - Provides strategy definitions from memory (not Supabase queries)
+
+**The "useInProcessBars" Flag:**
+
+```csharp
+var engine = new StrategyEngineService(
+    ...,
+    useInProcessBars: true  // Accept bars via OnBarClosedAsync() instead of SignalR
+);
+```
+
+This flag tells StrategyEngineService to accept bars via direct method calls rather than subscribing to SignalR. This is how ReplayEngine drives the simulation.
+
+**Replay Execution Flow:**
+
+```csharp
+// ReplayEngine.cs orchestration
+public async Task ExecuteAsync()
+{
+    // 1. Start production engine with adapters
+    await _engine.StartAsync();
+
+    // 2. Load historical data (via CandleCache + Supabase)
+    await LoadHistoricalDataAsync();
+    // Returns sorted list of all bars across symbols/timeframes
+
+    // 3. Main simulation loop
+    foreach (var bar in _candles)  // Chronological order
+    {
+        // a) Check stop losses and take profits on open positions
+        ProcessStopsAndTargets(bar);
+
+        // b) Drive bar into PRODUCTION StrategyEngine
+        var orders = await _engine.OnBarClosedAsync(
+            bar.SymbolId,
+            bar.Timeframe,
+            bar.ToBarDto()
+        );
+
+        // c) T+1 execution: Fill orders at NEXT bar's open
+        FillPendingOrders(bar, orders);
+
+        // d) Checkpoint logging every 10k bars
+        if (_processedBars % 10000 == 0)
+            LogCheckpoint();
+    }
+
+    // 4. Print final summary
+    PrintSummary();
+}
+```
+
+**T+1 Execution Model:**
+
+Replay uses realistic order fills:
+- **T+1 Execution**: Orders generated at bar close fill at *next* bar's open
+- **Spread Modeling**: Long fills at Ask (bid + spread), Short at Bid
+- **Slippage**: Configurable adverse slippage on entry/exit
+- **Commission**: Per-lot fees applied on entry and exit
+
+**Stop Loss / Take Profit Logic:**
+
+```csharp
+private void ProcessStopsAndTargets(Candle currentBar)
+{
+    foreach (var position in _openPositions)
+    {
+        if (currentBar.Timestamp <= position.EntryTime) continue;
+
+        // Spread-aware triggering
+        if (position.Side == TradeSide.Long)
+        {
+            double bidLow = currentBar.Low - _settings.SpreadPoints;
+            double bidHigh = currentBar.High - _settings.SpreadPoints;
+
+            // Stop loss triggers on bid low
+            if (position.StopLoss.HasValue && bidLow <= position.StopLoss.Value)
+            {
+                ClosePosition(position, position.StopLoss.Value, "SL");
+                continue;
+            }
+
+            // Take profit triggers on bid high
+            if (position.TakeProfit.HasValue && bidHigh >= position.TakeProfit.Value)
+            {
+                ClosePosition(position, position.TakeProfit.Value, "TP");
+            }
+        }
+        else // Short
+        {
+            double askHigh = currentBar.High + _settings.SpreadPoints;
+            double askLow = currentBar.Low + _settings.SpreadPoints;
+
+            // Stop loss triggers on ask high
+            if (position.StopLoss.HasValue && askHigh >= position.StopLoss.Value)
+            {
+                ClosePosition(position, position.StopLoss.Value, "SL");
+                continue;
+            }
+
+            // Take profit triggers on ask low
+            if (position.TakeProfit.HasValue && askLow <= position.TakeProfit.Value)
+            {
+                ClosePosition(position, position.TakeProfit.Value, "TP");
+            }
+        }
+    }
+}
+```
+
+**CandleCache - Smart Disk Caching:**
+
+Replay includes sophisticated disk caching to avoid repeated database queries during optimization:
+
+- **File Structure**: `cache/candles/{symbolId}/{timeframe}/candles.csv.gz`
+- **Metadata Tracking**: Sidecar `.meta.json` tracks min/max timestamps, row count
+- **Range-Aware Fetching**:
+  - If cache covers request window → read from disk
+  - If need older data → fetch, prepend, rebuild
+  - If need newer data → fetch, append
+- **Gzip Compression**: Saves ~90% disk space
+- **Concurrent-Safe**: Semaphore-based locking
+
+```csharp
+public async Task<List<Candle>> GetBarsAsync(
+    long symbolId,
+    string timeframe,
+    DateTime startUtc,
+    DateTime endUtc)
+{
+    var cachePath = GetCachePath(symbolId, timeframe);
+    var meta = LoadMetadata(cachePath);
+
+    // Cache hit - full range available
+    if (meta != null && meta.MinTs <= startUtc && meta.MaxTs >= endUtc)
+        return ReadFromDisk(cachePath, startUtc, endUtc);
+
+    // Cache miss or partial - fetch from Supabase
+    var bars = await _supabase.GetBarsAsync(symbolId, timeframe, startUtc, endUtc);
+
+    // Update cache
+    await UpdateCacheAsync(cachePath, bars);
+
+    return bars;
+}
+```
+
+**ReplaySettings Configuration:**
+
+```csharp
+{
+  "Replay": {
+    "SymbolIds": [1, 2, 3],
+    "StartTime": "2020-01-01T00:00:00Z",
+    "EndTime": "2023-12-31T23:59:59Z",
+    "Timeframes": ["M5", "M15", "H1", "H4", "D1"],
+    "SlippagePoints": 0.1,        // Price slippage per trade
+    "SpreadPoints": 0.40,         // Bid/Ask spread
+    "CommissionPerOrder": 3.0,    // Per lot
+    "InitialBalance": 1000.0,
+    "AbortIfBalanceBelow": 500.0, // Early abort threshold
+    "WriteOrdersCsv": true        // Output trade log
+  }
+}
+```
+
+---
+
+### Replay in the Optimizer
+
+The Optimizer project (`Alphiq.StrategyEngine.Optimizer`) wraps Replay to run parameter sweeps:
+
+**Key Components:**
+
+1. **BacktestRunner.cs** - Orchestrates single replay runs
+   ```csharp
+   public async Task<ReplayReport> RunAsync(
+       string jobName,
+       StrategyDefinition template,
+       Dictionary<string, object> parameters,
+       IEnumerable<string> symbols,
+       DateTime startUtc,
+       DateTime endUtc)
+   {
+       // 1. Build StrategyDefinition with specific parameter values
+       var def = MergeParameters(template, parameters);
+
+       // 2. Create ReplayEngine with adapters
+       var replay = new ReplayEngine(
+           new ReplayMarketDataService(...),
+           new BacktestOrderService(),
+           new InMemoryStrategyConfigProvider(def),
+           settings
+       );
+
+       // 3. Run simulation
+       await replay.ExecuteAsync();
+
+       // 4. Extract results via reflection
+       return ReplayReportIntrospection.BuildReportFromEngine(replay);
+   }
+   ```
+
+2. **GeneticSearch.cs** - Genetic algorithm optimizer
+   - Runs populations of parameter combinations
+   - Parallel backtest execution via `Task.WhenAll`
+   - Fitness scoring: `1000*CAGR + 20*PF - 200*DD + tradeBonusWeight*trades`
+
+3. **WalkForwardOptimizer.cs** - Walk-forward validation
+   - Splits data into training/testing windows
+   - Optimizes on training period
+   - Validates on out-of-sample test period
+
+4. **ReplayReportIntrospection.cs** - Result extraction
+   ```csharp
+   public static ReplayReport BuildReportFromEngine(ReplayEngine engine)
+   {
+       // Uses reflection to access private fields
+       var closedPositions = GetPrivateField<List<Position>>(engine, "_closedPositions");
+       var openPositions = GetPrivateField<List<Position>>(engine, "_openPositions");
+
+       // Calculate metrics
+       var winRate = closedPositions.Count(p => p.RealizedPnL > 0) / (double)closedPositions.Count;
+       var profitFactor = /* ... */;
+       var maxDrawdown = /* ... */;
+
+       return new ReplayReport { /* ... */ };
+   }
+   ```
+
+**Optimizer Execution Flow:**
+
+```
+OptimizationService.ExecuteAsync()
+  └─> GeneticSearch.OptimizeWindowAsync()
+      └─> for each generation (e.g., 20):
+          └─> for each individual in population (e.g., 50) in parallel:
+              └─> BacktestRunner.RunAsync()
+                  ├─> Build StrategyDefinition with parameters
+                  ├─> Create ReplayEngine (with adapters)
+                  ├─> await replay.ExecuteAsync()  // Full simulation
+                  └─> ReplayReportIntrospection.BuildReportFromEngine()
+                      └─> Return ReplayReport (metrics, parameters)
+```
+
+**Why Replay is Optimizer-Friendly:**
+
+- **CandleCache**: First run fetches from DB, subsequent runs read from disk (10-100x faster)
+- **Zero Divergence**: Guarantees optimized parameters will behave identically in live trading
+- **High Throughput**: Can run 1000s of parameter combinations programmatically
+- **Configurable Settings**: Each run can have different symbols, date ranges, costs
+
+---
+
+### Backtest Flow (Legacy - Rarely Used)
+
+**Note**: The standalone BacktestEngine is **legacy code**. Replay is preferred because it uses production code paths.
 
 **BacktestEngine.cs:**
 1. **Batch data load**: All historical bars from PostgreSQL via Npgsql
@@ -456,36 +778,30 @@ SignalR BarClosed Event
 3. **Simulated fills**: T+1 execution at next bar's OPEN price
 4. **Cost modeling**: Spread + slippage + commission per symbol
 5. **In-memory position tracking**: No external API calls
-6. **Fast-forward simulation**: No sleep/delays, pure computation
+6. **Custom strategy evaluation**: Calls `ISignalStrategy.Evaluate()` directly (diverges from production)
 
-**Backtest Execution Pipeline:**
-```
-Load All Bars from PostgreSQL (date range + symbols)
-  → Build Global Timeline (sorted by timestamp)
-  → For each timestamp:
-      → Aggregate bars into timeframes (M5 → M15 → H1 → H4 → D1)
-      → For each strategy:
-          → Check if main timeframe bar closed
-          → Evaluate strategy with multi-TF data
-          → If signal: Create pending order
-      → Process pending orders (fill at next bar OPEN + costs)
-      → Update in-memory positions & portfolio
-      → Emit trade events to result collector
-  → Calculate metrics (PnL, Sharpe, Drawdown, Win Rate)
-  → Return BacktestResult
-```
+**Why Backtest is Inferior:**
 
-**Key Differences:**
+- **Code Divergence**: Reimplements strategy orchestration instead of reusing StrategyEngineService
+- **Maintenance Burden**: Bug fixes must be applied in two places (live + backtest)
+- **Not Used by Optimizer**: GeneticSearch uses Replay, not Backtest
 
-| Aspect | Live | Backtest |
-|--------|------|----------|
-| Data Source | SignalR stream | PostgreSQL batch load |
-| Execution | Real-time async | Simulated sync loop |
-| Fill Price | Market (next tick) | Next bar OPEN + spread/slippage/commission |
-| Account State | Supabase query | In-memory balance tracker |
-| Trade Validation | TradeGate HTTP call | Skipped (or in-memory rules) |
-| Position Tracking | CTrader API | In-memory dictionary |
-| Speed | Real-time (seconds) | Fast-forward (minutes for years) |
+---
+
+### Execution Mode Comparison
+
+| Aspect | Live | Replay (Primary) | Backtest (Legacy) |
+|--------|------|------------------|-------------------|
+| **Code Path** | Production StrategyEngine | **Same as Live** | Custom reimplementation |
+| **Data Source** | SignalR stream | CandleCache + Supabase | PostgreSQL batch load |
+| **Execution** | Real-time async | Event-driven (via OnBarClosedAsync) | Simulated sync loop |
+| **Fill Price** | Market (next tick) | Next bar OPEN + spread/slippage | Next bar OPEN + costs |
+| **Account State** | Supabase query | In-memory balance | In-memory balance |
+| **Trade Validation** | TradeGate HTTP | Skipped (in-memory) | Skipped |
+| **Position Tracking** | CTrader API | ReplayEngine in-memory | BacktestEngine in-memory |
+| **Speed** | Real-time | Fast (disk cache) | Fast (in-memory) |
+| **Used By Optimizer** | N/A | ✅ Yes (primary) | ❌ No |
+| **Code Divergence Risk** | N/A | ✅ Zero (uses production) | ❌ High (separate implementation) |
 
 ---
 
@@ -843,7 +1159,7 @@ public interface IPositionSizingFactory
 These are the issues in v1 that Alphiq 2.0 must address:
 
 1. **No unified solution** - Each microservice has separate `.sln` file
-2. **Live/Backtest code divergence** - Different execution paths can cause strategy drift
+2. **Legacy Backtest engine exists** - The standalone BacktestEngine creates maintenance burden (though Replay solves code divergence by reusing production code)
 3. **Tight coupling to Supabase** - Hard to swap data layer or test in isolation
 4. **No unit tests** - Zero test projects found in codebase
 5. **Manual Docker orchestration** - docker-compose only, no Kubernetes support
@@ -852,6 +1168,8 @@ These are the issues in v1 that Alphiq 2.0 must address:
 8. **No API gateway** - Services expose ports directly (security/routing concerns)
 9. **No observability** - Limited structured logging, no distributed tracing
 10. **SignalR complexity** - Managing connections/reconnections/subscriptions is error-prone
+
+**Note**: The Replay architecture pattern (adapter-based production code reuse) is a **strength** that should be preserved in V2.
 
 ---
 
