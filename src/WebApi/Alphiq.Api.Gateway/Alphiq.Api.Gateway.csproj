@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>Alphiq.Api.Gateway</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Swashbuckle.AspNetCore" Version="7.1.0" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\Core\Alphiq.Domain\Alphiq.Domain.csproj" />
+    <ProjectReference Include="..\..\Core\Alphiq.Contracts\Alphiq.Contracts.csproj" />
+    <ProjectReference Include="..\..\Infrastructure\Alphiq.Infrastructure.Supabase\Alphiq.Infrastructure.Supabase.csproj" />
+    <ProjectReference Include="..\..\Infrastructure\Alphiq.Infrastructure.Messaging\Alphiq.Infrastructure.Messaging.csproj" />
+    <ProjectReference Include="..\..\..\apphost\Alphiq.ServiceDefaults\Alphiq.ServiceDefaults.csproj" />
+  </ItemGroup>
+</Project>

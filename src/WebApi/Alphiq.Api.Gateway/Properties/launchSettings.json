@@ -1,0 +1,12 @@
+{
+  "profiles": {
+    "Alphiq.Api.Gateway": {
+      "commandName": "Project",
+      "launchBrowser": true,
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "Development"
+      },
+      "applicationUrl": "https://localhost:58719;http://localhost:58720"
+    }
+  }
+}

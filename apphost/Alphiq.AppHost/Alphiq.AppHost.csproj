@@ -1,0 +1,18 @@
+<Project Sdk="Aspire.AppHost.Sdk/13.0.0">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Aspire.Hosting.Nats" Version="13.0.0" />
+    <PackageReference Include="Aspire.Hosting.Redis" Version="13.0.0" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Services\Alphiq.TradeNode\Alphiq.TradeNode.csproj" />
+    <ProjectReference Include="..\..\src\Services\Alphiq.Backtest.Worker\Alphiq.Backtest.Worker.csproj" />
+    <ProjectReference Include="..\..\src\Services\Alphiq.Optimizer.Service\Alphiq.Optimizer.Service.csproj" />
+    <ProjectReference Include="..\..\src\WebApi\Alphiq.Api.Gateway\Alphiq.Api.Gateway.csproj" />
+  </ItemGroup>
+</Project>

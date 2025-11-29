@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk.Worker">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>Alphiq.TradeNode</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\Core\Alphiq.TradingEngine\Alphiq.TradingEngine.csproj" />
+    <ProjectReference Include="..\..\Infrastructure\Alphiq.Infrastructure.Supabase\Alphiq.Infrastructure.Supabase.csproj" />
+    <ProjectReference Include="..\..\Infrastructure\Alphiq.Infrastructure.Broker.CTrader\Alphiq.Infrastructure.Broker.CTrader.csproj" />
+    <ProjectReference Include="..\..\Infrastructure\Alphiq.Infrastructure.Messaging\Alphiq.Infrastructure.Messaging.csproj" />
+    <ProjectReference Include="..\..\..\apphost\Alphiq.ServiceDefaults\Alphiq.ServiceDefaults.csproj" />
+  </ItemGroup>
+</Project>
