@@ -124,7 +124,68 @@ public sealed class TradingEngineService
             "Signal: {Signal} for {Symbol} from {Strategy} - {Reason}",
             signal.Signal, symbolId, strategy.Name, signal.Reason);
 
-        // TODO: Risk management, position sizing, order placement
-        await _eventSink.PublishEngineStatusAsync($"Signal: {signal.Signal}", ct);
+        // Convert signal to order side
+        var side = signal.Signal switch
+        {
+            TradeSignal.Buy => OrderSide.Buy,
+            TradeSignal.Sell => OrderSide.Sell,
+            _ => throw new InvalidOperationException($"Invalid signal for order: {signal.Signal}")
+        };
+
+        // Use suggested values or defaults
+        var volume = signal.SuggestedVolume ?? 0.01;
+        var stopLoss = signal.SuggestedStopLossPips;
+        var takeProfit = signal.SuggestedTakeProfitPips;
+
+        // Generate client order ID for traceability
+        var clientOrderId = $"{strategy.Name}-{_clock.UnixTimeSeconds}";
+
+        try
+        {
+            // Place order
+            var order = await _orderExecution.PlaceOrderAsync(
+                symbolId,
+                side,
+                OrderType.Market,
+                volume,
+                stopLoss: stopLoss,
+                takeProfit: takeProfit,
+                clientOrderId: clientOrderId,
+                ct: ct);
+
+            _logger.LogInformation(
+                "Order placed: {OrderId} {Side} {Volume} lots for {Symbol}",
+                order.OrderId, order.Side, order.Volume, symbolId);
+
+            // Publish events
+            await _eventSink.PublishOrderAsync(order, ct);
+            await _eventSink.PublishEngineStatusAsync(
+                $"Order placed: {side} {volume} lots @ {symbolId}", ct);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to place order for {Symbol} from {Strategy}",
+                symbolId, strategy.Name);
+            await _eventSink.PublishEngineStatusAsync(
+                $"Order failed: {ex.Message}", ct);
+        }
+    }
+
+    /// <summary>
+    /// Gets the number of registered strategies.
+    /// </summary>
+    public int StrategyCount => _strategies.Count;
+
+    /// <summary>
+    /// Gets the cached bar count for a symbol and timeframe.
+    /// </summary>
+    public int GetCachedBarCount(SymbolId symbolId, Timeframe timeframe)
+    {
+        if (_barCache.TryGetValue(symbolId, out var tfCache) &&
+            tfCache.TryGetValue(timeframe, out var bars))
+        {
+            return bars.Count;
+        }
+        return 0;
     }
 }
