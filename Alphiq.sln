@@ -59,6 +59,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Alphiq.Domain.Tests", "test
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Alphiq.TradingEngine.Tests", "tests\Alphiq.TradingEngine.Tests\Alphiq.TradingEngine.Tests.csproj", "{E2CCB686-74D9-4517-A789-BF584D2CE180}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Alphiq.Infrastructure.Supabase.Tests", "tests\Alphiq.Infrastructure.Supabase.Tests\Alphiq.Infrastructure.Supabase.Tests.csproj", "{8E9EB58C-7436-49A3-8910-D9248CA8E7FC}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -321,6 +323,18 @@ Global
 		{E2CCB686-74D9-4517-A789-BF584D2CE180}.Release|x64.Build.0 = Release|Any CPU
 		{E2CCB686-74D9-4517-A789-BF584D2CE180}.Release|x86.ActiveCfg = Release|Any CPU
 		{E2CCB686-74D9-4517-A789-BF584D2CE180}.Release|x86.Build.0 = Release|Any CPU
+		{8E9EB58C-7436-49A3-8910-D9248CA8E7FC}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{8E9EB58C-7436-49A3-8910-D9248CA8E7FC}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{8E9EB58C-7436-49A3-8910-D9248CA8E7FC}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{8E9EB58C-7436-49A3-8910-D9248CA8E7FC}.Debug|x64.Build.0 = Debug|Any CPU
+		{8E9EB58C-7436-49A3-8910-D9248CA8E7FC}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{8E9EB58C-7436-49A3-8910-D9248CA8E7FC}.Debug|x86.Build.0 = Debug|Any CPU
+		{8E9EB58C-7436-49A3-8910-D9248CA8E7FC}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{8E9EB58C-7436-49A3-8910-D9248CA8E7FC}.Release|Any CPU.Build.0 = Release|Any CPU
+		{8E9EB58C-7436-49A3-8910-D9248CA8E7FC}.Release|x64.ActiveCfg = Release|Any CPU
+		{8E9EB58C-7436-49A3-8910-D9248CA8E7FC}.Release|x64.Build.0 = Release|Any CPU
+		{8E9EB58C-7436-49A3-8910-D9248CA8E7FC}.Release|x86.ActiveCfg = Release|Any CPU
+		{8E9EB58C-7436-49A3-8910-D9248CA8E7FC}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -351,5 +365,6 @@ Global
 		{11A30FFF-3D81-4BBB-9254-CFACBCD06FB6} = {90DCE71B-4939-B80A-CE8C-85DE2210C7AC}
 		{C1FA0318-BB87-40EE-96F7-469EC1050ECB} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
 		{E2CCB686-74D9-4517-A789-BF584D2CE180} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
+		{8E9EB58C-7436-49A3-8910-D9248CA8E7FC} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
 	EndGlobalSection
 EndGlobal

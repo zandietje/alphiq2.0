@@ -83,11 +83,30 @@ These modes differ only by supplying different adapters:
 
 - No EF Core
 - No custom ORMs
-- All data access goes through Supabase/PostgREST
-- `Alphiq.Infrastructure.Supabase` is allowed to use **Npgsql** for direct SQL access
-  to the Supabase Postgres database (especially for bulk candle/trade queries).
-- PostgREST / Supabase client can still be used where convenient (e.g. auth, metadata),
-  but never directly from services – only via `Alphiq.Infrastructure.Supabase`.
+- All data access goes through Supabase
+
+**Data Access Strategy:**
+
+| Use Case | Approach |
+|----------|----------|
+| **Default (most queries)** | `HttpClient` against Supabase PostgREST API |
+| **Large datasets only** | `Npgsql` for direct SQL (bulk candle data, large trade history) |
+
+**Guidelines:**
+
+- **Prefer PostgREST API** (`HttpClient`) for:
+  - Strategy configurations
+  - Symbol metadata
+  - Account info
+  - Orders & trades (normal queries)
+  - Any CRUD operations with reasonable row counts
+
+- **Use Npgsql** only when:
+  - Fetching thousands of candle bars for backtesting
+  - Bulk inserts/updates of historical data
+  - Complex aggregations that PostgREST cannot express efficiently
+
+- Never access Supabase directly from services – only via `Alphiq.Infrastructure.Supabase`
 
 A repository layer exists under:
 
@@ -251,18 +270,21 @@ examples:
 
 ### **Alphiq.Infrastructure.Supabase**
 
-Supabase/PostgREST integration.
+Supabase data access layer.
 
-Repositories for:
+**Default: HttpClient + PostgREST API** for most repositories:
 
 - Strategy configurations
 - Strategy versions
-- Historical bars
 - Orders
 - Trades
 - Portfolios
 - Backtest results
 - Optimization results
+
+**Exception: Npgsql** for large dataset repositories:
+
+- Historical bars (bulk candle fetching for backtests)
 
 No EF Core.
 DTO ↔ Domain mapping is explicit.
