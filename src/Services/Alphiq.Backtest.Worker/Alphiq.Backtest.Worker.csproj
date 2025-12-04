@@ -6,6 +6,9 @@
     <RootNamespace>Alphiq.Backtest.Worker</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
+    <PackageReference Include="Aspire.NATS.Net" Version="9.0.0" />
+  </ItemGroup>
+  <ItemGroup>
     <ProjectReference Include="..\..\Core\Alphiq.TradingEngine\Alphiq.TradingEngine.csproj" />
     <ProjectReference Include="..\..\Infrastructure\Alphiq.Infrastructure.Supabase\Alphiq.Infrastructure.Supabase.csproj" />
     <ProjectReference Include="..\..\Infrastructure\Alphiq.Infrastructure.Broker.Simulated\Alphiq.Infrastructure.Broker.Simulated.csproj" />

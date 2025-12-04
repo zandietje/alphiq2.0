@@ -72,12 +72,7 @@ public sealed class BacktestMarketDataFeed : IMarketDataFeed
     }
 
     /// <inheritdoc />
-    public Task<IReadOnlyList<Bar>> GetHistoryAsync(
-        SymbolId symbolId,
-        Timeframe timeframe,
-        DateTimeOffset from,
-        DateTimeOffset to,
-        CancellationToken ct = default)
+    public Task<IReadOnlyList<Bar>> GetHistoryAsync(SymbolId symbolId, Timeframe timeframe, DateTimeOffset from, DateTimeOffset to, CancellationToken ct = default)
     {
         var key = (symbolId, timeframe);
         if (!_bars.TryGetValue(key, out var bars))

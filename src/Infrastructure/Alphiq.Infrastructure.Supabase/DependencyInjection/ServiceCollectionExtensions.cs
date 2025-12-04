@@ -41,4 +41,21 @@ public static class ServiceCollectionExtensions
 
         return services;
     }
+
+    /// <summary>
+    /// Registers Supabase candle repository for bulk data access via Npgsql.
+    /// Requires ConnectionString to be configured in SupabaseOptions.
+    /// </summary>
+    public static IServiceCollection AddSupabaseCandleRepository(
+        this IServiceCollection services,
+        IConfiguration configuration)
+    {
+        // Bind configuration (may already be bound, but safe to call again)
+        services.Configure<SupabaseOptions>(configuration.GetSection(SupabaseOptions.SectionName));
+
+        // Register candle repository
+        services.AddScoped<ICandleRepository, CandleRepository>();
+
+        return services;
+    }
 }

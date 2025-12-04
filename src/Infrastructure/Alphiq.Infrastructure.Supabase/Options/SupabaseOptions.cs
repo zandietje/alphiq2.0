@@ -19,4 +19,10 @@ public sealed class SupabaseOptions
     /// Supabase API key (anon or service_role).
     /// </summary>
     public required string ApiKey { get; init; }
+
+    /// <summary>
+    /// PostgreSQL connection string for direct database access via Npgsql.
+    /// Used for bulk operations like candle data fetching.
+    /// </summary>
+    public string? ConnectionString { get; init; }
 }

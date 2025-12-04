@@ -15,9 +15,7 @@ public static class ServiceCollectionExtensions
     /// <param name="services">The service collection.</param>
     /// <param name="configuration">Optional configuration for BacktestSettings.</param>
     /// <returns>The service collection for chaining.</returns>
-    public static IServiceCollection AddSimulatedBroker(
-        this IServiceCollection services,
-        IConfiguration? configuration = null)
+    public static IServiceCollection AddSimulatedBroker(this IServiceCollection services, IConfiguration? configuration = null)
     {
         // Bind settings from configuration if provided
         if (configuration != null)
